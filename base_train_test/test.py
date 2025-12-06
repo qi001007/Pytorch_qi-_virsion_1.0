@@ -6,26 +6,33 @@ import importlib
 
 from pathlib import Path
 from torchvision import transforms
-from torchvision.datasets import FashionMNIST
+from torchvision.datasets import ImageFolder
 
 import numpy as np
 import torch.utils.data as Data
 
 from tools.my_bar import simple_bar
 
+# print(__file__)
 
 # 创建解析器
-parser = argparse.ArgumentParser()
+# formatter_class=argparse.ArgumentDefaultsHelpFormatter 是 argparse 提供的一种“帮助文本格式化器”。
+# 作用：让 python xxx.py -h 打印帮助信息时，自动把各参数的“默认值”列出来，用户不用翻代码就能知道缺省是多少
+parser = argparse.ArgumentParser(
+    description="PyTorch Qi版框架 - 训练入口",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
 # 读取 --config 参数
-parser.add_argument('--config', default='config.yaml')
+parser.add_argument('--config', type=str, required=True, default='config.yaml')
 # 读取 --process 参数
-parser.add_argument('--process', default='process.yaml')
+parser.add_argument('--process', type=str, required=True, default='process.yaml')
 # 读取 --mean_std_stats 参数
-parser.add_argument('--mean_std_stats')
+parser.add_argument('--mean_std_stats', type=str, required=True, default='Intermediate_data/mean_std.json')
 # 读取 --best_wst_path 参数
-parser.add_argument('--best_wst_path')
+parser.add_argument('--best_wst_path', type=str, required=True, default='Intermediate_data/best_wst_path.json')
 # 开始解析
 args = parser.parse_args()
+# print("argparse 通过！", args)
 
 # 获取config.yaml存为py的字典
 with (open(args.config, mode='r', encoding='utf-8') as c,
@@ -45,13 +52,15 @@ out_path = Path(process['project_base']['project_path']) / pipeline['test']['out
 # 自动递归建目录文件
 out_path.parent.mkdir(parents=True, exist_ok=True)
 
-# 从config的global中获取model_path，model_name
+# 从config的global中获取model_path，model_name，model_part_name
 model_path = global_params['model']['model_path']
 model_name = global_params['model']['model_name']
+model_part_name = global_params['model']['model_part_name']
 # 动态导入模块
 Module = importlib.import_module(model_path)   # 等价于 import models
 # 从模块里取出类
 module = getattr(Module, model_name)
+module_part = getattr(Module, model_part_name)
 
 # 取出参数
 size = tuple(global_params['img']['img_size'])
@@ -59,12 +68,23 @@ batch_size = int(global_params['test']['batch_size'])
 num_work = int(global_params['test']['num_work'])
 test_way = int(global_params['test']['test_way'])
 
+mean = np.array(mean_std['Mean'])
+std = np.array(mean_std['Variance'])
+
+img_channels = global_params['img']['img_channels']
+out_channels = global_params['img']['out_channels']
+
 
 def test_data_process():
-    test_data = FashionMNIST(root='./data',
-                             train=False,
-                             transform=transforms.Compose([transforms.Resize(size), transforms.ToTensor()]),
-                             download=True)
+    # 定义数据集的路径
+    ROOT_PATH_TRAIN = "./data/test"
+
+    # 定义数据集处理方法变量
+    normalize = transforms.Normalize(mean=mean, std=std)
+    test_transforms = transforms.Compose([transforms.Resize(size), transforms.ToTensor(), normalize])
+
+    # 加载数据集
+    test_data = ImageFolder(root=ROOT_PATH_TRAIN, transform=test_transforms)
 
     class_label = test_data.classes  # 标签
 
@@ -106,6 +126,8 @@ def test_model_process(model, test_dataloader):
 
     # 计算准确率
     test_acc = np.double(test_corrects) / test_num
+    # 输出output
+    json.dump(test_acc, open(out_path, mode='w', encoding='utf-8'))
     print(f"测试准确率：{test_acc:.4f}")
 
 
@@ -143,12 +165,14 @@ def test_model_process_show(model, test_dataloader, class_label):
 
     # 计算准确率
     test_acc = np.double(test_corrects) / test_num
+    # 输出output
+    json.dump(test_acc, open(out_path, mode='w', encoding='utf-8'))
     print(f"测试准确率：{test_acc:.4f}")
 
 
 if __name__ == '__main__':
     # 加载模型
-    Model = module()
+    Model = module(module_part, img_channels, out_channels)
     # 存入参数
     Model.load_state_dict(torch.load(best_wst))
     # 加载测试数据

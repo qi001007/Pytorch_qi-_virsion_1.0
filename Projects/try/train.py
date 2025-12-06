@@ -22,17 +22,24 @@ import pandas as pd
 
 from tools.my_bar import simple_bar
 
+# print(__file__)
 
 # 创建解析器
-parser = argparse.ArgumentParser()
+# formatter_class=argparse.ArgumentDefaultsHelpFormatter 是 argparse 提供的一种“帮助文本格式化器”。
+# 作用：让 python xxx.py -h 打印帮助信息时，自动把各参数的“默认值”列出来，用户不用翻代码就能知道缺省是多少
+parser = argparse.ArgumentParser(
+    description="PyTorch Qi版框架 - 训练入口",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
 # 读取 --config 参数
-parser.add_argument('--config',  required=True, help='全局配置 YAML')
+parser.add_argument('--config', type=str, required=True, default='config.yaml')
 # 读取 --process 参数
-parser.add_argument('--process', required=True, help='流程配置 YAML')
+parser.add_argument('--process', type=str, required=True, default='process.yaml')
 # 读取 --mean_std_stats 参数
-parser.add_argument('--mean_std_stats', required=True, help='数据集均值方差 JSON')
+parser.add_argument('--mean_std_stats', type=str, required=True, default='Intermediate_data/mean_std.json')
 # 开始解析
 args = parser.parse_args()
+# print("argparse 通过！", args)
 
 # 获取config.yaml存为py的字典
 with (open(args.config, mode='r', encoding='utf-8') as c,
@@ -51,13 +58,15 @@ out_path = Path(process['project_base']['project_path']) / pipeline['train']['ou
 # 自动递归建目录文件
 out_path.parent.mkdir(parents=True, exist_ok=True)
 
-# 从config的global中获取model_path，model_name
+# 从config的global中获取model_path，model_name，model_part_name
 model_path = global_params['model']['model_path']
 model_name = global_params['model']['model_name']
+model_part_name = global_params['model']['model_part_name']
 # 动态导入模块
 Module = importlib.import_module(model_path)   # 等价于 import models
 # 从模块里取出类
 module = getattr(Module, model_name)
+module_part = getattr(Module, model_part_name)
 
 # 取出参数
 size = tuple(global_params['img']['img_size'])
@@ -68,7 +77,10 @@ epochs = int(global_params['train']['num_epochs'])
 lr = float(global_params['train']['optimizer']['lr'])
 
 mean = np.array(mean_std['Mean'])
-std = np.array(mean_std['variance'])
+std = np.array(mean_std['Variance'])
+
+img_channels = global_params['img']['img_channels']
+out_channels = global_params['img']['out_channels']
 
 
 # -------------------- 训练函数 --------------------
@@ -330,7 +342,7 @@ def main():
     listener = keyboard.Listener(on_press=on_press, daemon=True)
     listener.start()
     # 将模型实例化
-    Model = module()
+    Model = module(module_part, img_channels=img_channels, out_channels=out_channels)
     # 数据分批
     Train_dataloader, Val_dataloader = train_val_data_process()
     # 参数初始化

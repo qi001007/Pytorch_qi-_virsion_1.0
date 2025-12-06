@@ -1,23 +1,6 @@
-import yaml
 import torch
-import argparse
 from torch import nn
 from torchsummary import summary
-
-# 创建解析器
-parser = argparse.ArgumentParser()
-# 读取 --config 参数
-parser.add_argument('--config', default='config.yaml')
-# 开始解析
-args = parser.parse_args()
-
-# 获取config.yaml存为py的字典
-with (open(args.config, mode='r', encoding='utf-8') as c):
-    config = yaml.safe_load(c)
-# 构造新字典，将每一部分的名字和内部参数对应，方便调运
-global_params = {part['name']: part for part in config['global']}
-img_channels = global_params['img']['img_channels']
-out_channels = global_params['img']['out_channels']
 
 
 class Residual(nn.Module):
@@ -46,7 +29,7 @@ class Residual(nn.Module):
 
 
 class ResNet18(nn.Module):
-    def __init__(self, residual):
+    def __init__(self, residual, img_channels, out_channels):
         super(ResNet18, self).__init__()
         self.block1 = nn.Sequential(
             nn.Conv2d(in_channels=img_channels, out_channels=64, kernel_size=7, stride=2, padding=3),
@@ -91,5 +74,5 @@ if __name__ == "__main__":
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     print(device)
 
-    ResNet18 = ResNet18(Residual).to(device)
+    ResNet18 = ResNet18(Residual, img_channels=1, out_channels=10).to(device)
     print(summary(ResNet18, input_size=(1, 224, 224)))

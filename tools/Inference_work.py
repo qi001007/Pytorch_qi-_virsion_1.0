@@ -1,27 +1,97 @@
 import os
 import cv2
+import json
+import yaml
+import time
 import torch
 import argparse
-import numpy as np
-import time
+import importlib
+
 from pathlib import Path
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
-from model import Residual, ResNet18
-from my_bar import simple_bar
+
+import numpy as np
+
+from tools.my_bar import simple_bar
+
+# 创建解析器
+# formatter_class=argparse.ArgumentDefaultsHelpFormatter 是 argparse 提供的一种“帮助文本格式化器”。
+# 作用：让 python xxx.py -h 打印帮助信息时，自动把各参数的“默认值”列出来，用户不用翻代码就能知道缺省是多少
+parser = argparse.ArgumentParser(
+    description="PyTorch Qi版框架 - 训练入口",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
+# 读取 --config 参数
+parser.add_argument('--config', type=str, required=True, default='config.yaml')
+# 读取 --process 参数
+parser.add_argument('--process', type=str, required=True, default='process.yaml')
+# 读取 --mean_std_stats 参数
+parser.add_argument('--mean_std_stats', type=str, required=True, default='Intermediate_data/mean_std.json')
+# 读取 --best_wst_path 参数
+parser.add_argument('--best_wst_path', type=str, required=True, default='Intermediate_data/best_wst_path.json')
+# 读取 --test_data_dir 参数
+parser.add_argument('--test_data_dir', type=str, required=True, default='data/test')
+# 读取 --train_data_dir 参数
+parser.add_argument('--train_data_dir', type=str, required=True, default='data/train')
+
+# 开始解析
+args = parser.parse_args()
+# print("argparse 通过！", args)
+
+# 获取config.yaml以及其他yaml和json文件内容存为py的字典
+with (open(args.config, mode='r', encoding='utf-8') as c,
+      open(args.process, mode='r', encoding='utf-8') as p,
+      open(args.mean_std_stats, mode='r', encoding='utf-8') as ms,
+      open(args.best_wst_path, mode='r', encoding='utf-8') as wt,
+      ):
+    config = yaml.safe_load(c)
+    process = yaml.safe_load(p)
+    mean_std = json.load(ms)
+    best_wst = json.load(wt)
+# 构造新字典，将每一部分的名字和内部参数对应，方便调运
+global_params = {part['name']: part for part in config['global']}
+# 构造新字典，将每一步step_name和内部参数对应方便调运
+pipeline = {step['name']: step for step in process['process']}
+# 构造输出路径，存储变量
+out_path = Path(process['project_base']['project_path']) / pipeline['test']['output']
+# 自动递归建目录文件
+out_path.parent.mkdir(parents=True, exist_ok=True)
+
+# 从config的global中获取model_path，model_name，model_part_name
+model_path = global_params['model']['model_path']
+model_name = global_params['model']['model_name']
+model_part_name = global_params['model']['model_part_name']
+# 动态导入模块
+Module = importlib.import_module(model_path)   # 等价于 import models
+# 从模块里取出类
+module = getattr(Module, model_name)
+module_part = getattr(Module, model_part_name)
+
+# 取出参数
+size = tuple(global_params['img']['img_size'])
+
+mean = np.array(mean_std['Mean'])
+std = np.array(mean_std['Variance'])
+
+img_channels = global_params['img']['img_channels']
+out_channels = global_params['img']['out_channels']
+
+Test_data_root = args.test_data_dir
+Train_data_root = args.train_data_dir
 
 
 class InferenceConfig:
     """配置类，便于替换模型、数据集和数据处理方法"""
     # 模型配置
-    MODEL_CLASS = ResNet18
-    MODEL_ARGS = (Residual,)  # 模型初始化参数
-    MODEL_WEIGHTS_PATH = './model_wts/2025-11-29-16-35model/best_model_2025-11-29-16-50.pth'
+    MODEL_CLASS = module
+    MODEL_ARGS = (module_part,)  # 模型初始化参数
+    MODEL_WEIGHTS_PATH = best_wst
 
     # 数据预处理配置
-    IMAGE_SIZE = (224, 224)
-    MEAN = [0.17263502, 0.15147281, 0.14267276]
-    STD = [0.07360361, 0.06215812, 0.05929757]
+    IMAGE_SIZE = size
+    MEAN = mean
+    STD = std
 
     # UI配置
     UI_HEIGHT = 100
@@ -44,8 +114,8 @@ class InferenceConfig:
 
 
 class InferenceUI:
-    def __init__(self, img_dir, train_data_root, config=InferenceConfig):
-        self.config = config
+    def __init__(self, test_data_root, train_data_root, in_config=InferenceConfig):
+        self.config = in_config
 
         # 获取类别名称
         train_set = ImageFolder(root=train_data_root, transform=transforms.ToTensor())
@@ -56,8 +126,8 @@ class InferenceUI:
         self._load_model()
 
         # 获取图像列表
-        self.img_list = self._get_image_list(img_dir)
-        assert self.img_list, f'No image found in {img_dir}'
+        self.img_list = self._get_image_list(test_data_root)
+        assert self.img_list, f'No image found in {test_data_root}'
         print(f'=> 共找到 {len(self.img_list)} 张测试图')
 
         # 数据预处理
@@ -74,20 +144,20 @@ class InferenceUI:
 
     def _load_model(self):
         """加载模型 - 可根据需要重写此方法"""
-        model = self.config.MODEL_CLASS(*self.config.MODEL_ARGS)
+        model = self.config.MODEL_CLASS(*self.config.MODEL_ARGS, img_channels=img_channels, out_channels=out_channels)
         model.load_state_dict(torch.load(self.config.MODEL_WEIGHTS_PATH, map_location='cpu'))
         model.to(self.device)
         model.eval()
         self.model = model
 
-    def _get_image_list(self, img_dir):
+    def _get_image_list(self, test_data_root):
         """获取图像列表 - 可根据需要重写此方法"""
         img_list = []
         for ext in self.config.IMG_EXTENSIONS:
-            img_list.extend(Path(img_dir).rglob(f'*.{ext}'))
-            img_list.extend(Path(img_dir).rglob(f'*.{ext.upper()}'))
+            img_list.extend(Path(test_data_root).rglob(f'*.{ext}'))
+            img_list.extend(Path(test_data_root).rglob(f'*.{ext.upper()}'))
         # 去重并排序
-        return sorted({str(p) for p in img_list})
+        return sorted({str(P) for P in img_list})
 
     def _init_ui(self):
         """初始化UI组件"""
@@ -303,10 +373,5 @@ class InferenceUI:
 
 # -------------------- 入口 --------------------
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--img_dir', default='./data/test', help='folder contains test images')
-    parser.add_argument('--train_dir', default='./data/train', help='folder used for training')
-    args = parser.parse_args()
-
     # 使用默认配置
-    InferenceUI(img_dir=args.img_dir, train_data_root=args.train_dir).run()
+    InferenceUI(test_data_root=Test_data_root, train_data_root=Train_data_root).run()
