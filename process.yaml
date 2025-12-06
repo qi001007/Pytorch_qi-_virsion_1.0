@@ -1,0 +1,44 @@
+# ============ 任务列表 ============
+project_base:
+  project_name: 'try'
+  project_path: 'E:\pycharm_project\pytorch_001\Pytorch_qi版框架_version_1.0\Projects\try'
+
+process:
+  - name: data_partition
+    script: python "E:\pycharm_project\pytorch_001\Pytorch_qi版框架_version_1.0\tools\data_partitioning.py"
+    args:
+      config: 'E:\pycharm_project\pytorch_001\Pytorch_qi版框架_version_1.0\config.yaml'
+    output: null
+
+  - name: mean_std
+    script: python "E:\pycharm_project\pytorch_001\Pytorch_qi版框架_version_1.0\tools\mean_std.py"
+    args:
+      config: "{{data_partition.args.config}}"
+      process: 'E:\pycharm_project\pytorch_001\Pytorch_qi版框架_version_1.0\process.yaml'
+    output: Intermediate_data/mean_std.json
+
+  - name: train
+    script: python train.py
+    args:
+      config: "{{data_partition.args.config}}"
+      process: "{{mean_std.args.process}}"
+      mean_std_stats: "{{mean_std.output}}"
+    output: Intermediate_data/best_wst_path.json
+
+  - name: test
+    script: python test.py
+    args:
+      config: "{{data_partition.args.config}}"
+      process: "{{mean_std.args.process}}"
+      mean_std_stats: "{{mean_std.output}}"
+      best_wst_path: "{{train.output}}"
+    output: Intermediate_data/test_acc.json
+
+  - name: Inference
+    script: python Inference_work.py
+    args:
+      config: "{{data_partition.args.config}}"
+      mean_std_stats: "{{mean_std.output}}"
+      best_wst_path: "{{train.output}}"
+    output: Intermediate_data/Inference_acc.json
+

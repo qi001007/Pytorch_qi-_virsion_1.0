@@ -1,0 +1,48 @@
+# =========== Project全局参数 ============
+base_train_test:
+  base_train_name: 'train.py'
+  base_test_name: 'test.py'
+  base_train_path: 'E:\pycharm_project\pytorch_001\Pytorch_qi版框架_version_1.0\base_train_test\train.py'
+  base_test_path: 'E:\pycharm_project\pytorch_001\Pytorch_qi版框架_version_1.0\base_train_test\test.py'
+
+base_config:
+  base_config_name: 'config.yaml'
+  base_config_path: 'E:\pycharm_project\pytorch_001\Pytorch_qi版框架_version_1.0\config.yaml'
+
+base_process:
+  base_process_name: 'process.yaml'
+  base_process_path: 'E:\pycharm_project\pytorch_001\Pytorch_qi版框架_version_1.0\process.yaml'
+
+global:
+  - name: gpu
+    id: 0
+
+  - name: img
+    img_size: [224, 224]
+    img_channels: 3
+    out_channels: 5
+
+  - name: data_file
+    split_rate: 0.1
+    data_file_name: 'data_fruits'
+    data_file_path: 'E:\pycharm_project\pytorch_001\Pytorch_qi版框架_version_1.0\Projects\try\data_fruits'
+
+  - name: model
+    model_name: ResNet18
+    model_path: Models.ResNet18_model.model
+
+  - name: train
+    train: 0.8
+    batch_size: 64
+    num_work: 4
+    num_epochs: 20
+    optimizer:
+      optim_name: Adam
+      lr: 0.001
+    criterion:
+      criterion_name: CrossEntropyLoss'
+
+  - name: test
+    batch_size: 1
+    num_work: 4
+    test_way: 1

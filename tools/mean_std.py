@@ -21,13 +21,40 @@
   - 灰度图或通道数不符的图片会被跳过（ValueError 捕获）
   - 大数据集耗时较长，建议 SSD 并行读取（可扩展用 Pillow-SIMD、tqdm）
 """
-from PIL import Image
 import os
+import json
+import yaml
+import argparse
 import numpy as np
+from PIL import Image
+from pathlib import Path
 from my_bar import simple_bar
 
+
+# 创建解析器
+parser = argparse.ArgumentParser()
+# 读取 --config 参数
+parser.add_argument('--config', default='config.yaml')
+# 读取 --process 参数
+parser.add_argument('--process', default='process.yaml')
+# 开始解析
+args = parser.parse_args()
+
+# 获取config.yaml存为py的字典
+with open(args.config, mode='r', encoding='utf-8') as c, open(args.process, mode='r', encoding='utf-8') as p:
+    config = yaml.safe_load(c)
+    process = yaml.safe_load(p)
+# 构造新字典，将每一部分的名字和内部参数对应，方便调运
+global_params = {part['name']: part for part in config['global']}
+# 构造新字典，将每一步step_name和内部参数对应方便调运
+pipeline = {step['name']: step for step in process['process']}
+# 构造输出路径，存储变量
+out_path = Path(process['project_base']['project_path']) / pipeline['mean_std']['output']
+# 自动递归建目录文件
+out_path.parent.mkdir(parents=True, exist_ok=True)
+
 # 文件夹路径，包含所有图片文件
-folder_path = 'data_mask'
+folder_path = global_params['data_file']['data_file_path']
 
 # 初始化累积变量
 total_pixels = 0
@@ -77,5 +104,9 @@ for root, dirs, files in os.walk(folder_path):
 
 variance = sum_squared_diff / total_pixels
 
-print("Mean:", mean)
-print("Variance:", variance)
+print("Mean:", mean.tolist())
+print("Variance:", variance.tolist())
+
+mean_std = {"Mean": mean.tolist(),
+            "Variance": variance.tolist()}
+json.dump(mean_std, open(out_path, mode='w', encoding='utf-8'), indent=2)
